@@ -329,243 +329,226 @@ function tube(x1,y1,x2,y2,col,w){
   cx.strokeStyle=col;cx.lineWidth=w;cx.stroke();
 }
 
-// ── 2-segment limb (thigh+shin or upper+lower arm) ──
-function limb(ox,oy, ang1,len1, ang2,len2, col){
-  var kx=ox+Math.cos(ang1)*len1, ky=oy+Math.sin(ang1)*len1;
-  var fx=kx+Math.cos(ang2)*len2, fy=ky+Math.sin(ang2)*len2;
-  // Draw back-to-front: outline then colour
-  cx.strokeStyle=INK;cx.lineWidth=7;
-  cx.beginPath();cx.moveTo(ox,oy);cx.lineTo(kx,ky);cx.lineTo(fx,fy);cx.stroke();
-  cx.strokeStyle=col;cx.lineWidth=5;
-  cx.beginPath();cx.moveTo(ox,oy);cx.lineTo(kx,ky);cx.lineTo(fx,fy);cx.stroke();
-  return {kx,ky,fx,fy};
+// ── INVERSE KINEMATICS LIMB ──
+function drawIKLimb(x0, y0, tx, ty, L1, L2, flip, col, width, isArm, handAction) {
+  var dx = tx - x0, dy = ty - y0;
+  var d = Math.sqrt(dx*dx + dy*dy);
+  if (d > L1 + L2 - 0.1) d = L1 + L2 - 0.1;
+  var a = Math.acos((L1*L1 + d*d - L2*L2) / (2 * L1 * d));
+  var b = Math.atan2(dy, dx);
+  var angle1 = flip ? b + a : b - a;
+  
+  var jx = x0 + Math.cos(angle1) * L1;
+  var jy = y0 + Math.sin(angle1) * L1;
+
+  cx.lineCap = 'round'; cx.lineJoin = 'round';
+  cx.strokeStyle = INK; cx.lineWidth = width + 2.5;
+  cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(jx, jy); cx.lineTo(tx, ty); cx.stroke();
+  
+  cx.strokeStyle = col; cx.lineWidth = width;
+  cx.beginPath(); cx.moveTo(x0, y0); cx.lineTo(jx, jy); cx.lineTo(tx, ty); cx.stroke();
+
+  if (isArm) {
+    if (handAction === 'wave') {
+      cx.save(); cx.translate(tx, ty);
+      cx.rotate(Math.atan2(ty - jy, tx - jx) - Math.PI/2 + Math.sin(b.t * 8) * 0.4);
+      cx.beginPath(); cx.arc(0, 0, 4.5, 0, Math.PI*2); cx.fillStyle = SK; cx.fill(); cx.stroke();
+      for(var f=0; f<4; f++) {
+         cx.beginPath(); cx.moveTo(-3+f*2, 0); cx.lineTo(-3+f*2+Math.sin(b.t*9)*2.5, -7);
+         cx.strokeStyle=SK; cx.lineWidth=2; cx.stroke();
+      }
+      cx.restore();
+    } else {
+      cx.beginPath(); cx.arc(tx, ty, 4, 0, Math.PI*2);
+      cx.fillStyle = SK; cx.strokeStyle = INK; cx.lineWidth=1.5; cx.fill(); cx.stroke();
+    }
+  } else {
+    // Elegant pedal foot
+    cx.beginPath(); cx.moveTo(tx - 5, ty + 1.5); cx.lineTo(tx + 7, ty + 1.5);
+    cx.strokeStyle = '#0f172a'; cx.lineWidth = 4; cx.stroke();
+  }
 }
 
-// ── MAIN DRAW FUNCTION ──
+// ── MAIN DRAW FUNCTION (REDESIGNED) ──
 function drawCyclist(bx,by,dir,t,action){
   cx.save();
   cx.translate(bx,by);
   if(dir===-1)cx.scale(-1,1);
   cx.lineJoin='round';cx.lineCap='round';
 
-  // Constants
-  var WR=22;   // wheel radius
-  var WB=56;   // wheelbase (rear wheel at 0, front at WB)
-  var BB=b.bodyBob; // smooth body bob from cycling
-
-  // Wheel spin matches speed
+  var WR=22, WB=56, BB=b.bodyBob;
   var spin = t * 3.5;
-
-  // Bottom bracket position (legs pedal toward here)
   var CRANK_X=WB*.38, CRANK_Y=-WR*.28;
-
-  // Seat position
   var SEAT_X=WB*.3, SEAT_Y=-WR*1.32+BB;
-
-  // Handlebar position
   var HB_X=WB*.84, HB_Y=-WR*1.05+BB;
-
-  // Body lean (forward on bike)
-  var bodyLean = action==='wheelie' ? -22 : -8;
+  var bodyLean = action==='wheelie' ? -25 : (action==='angry' ? -35 : -14);
 
   // Shadow
   cx.beginPath();cx.ellipse(WB*.4,WR+4,WB*.58,5,0,0,Math.PI*2);
-  cx.fillStyle='rgba(0,0,0,.22)';cx.fill();
+  cx.fillStyle='rgba(0,0,0,.15)';cx.fill();
 
-  // ── REAR WHEEL ──
+  // Wheels
+  var fwy = action==='wheelie' ? -20+Math.sin(t*2)*5 : 0;
   wheel(0, 0, WR, spin);
-
-  // ── FRONT WHEEL (lift if wheelie) ──
-  var fwy = action==='wheelie' ? -18+Math.sin(t*2)*4 : 0;
   wheel(WB, fwy, WR, spin*1.02);
 
-  // ── BICYCLE FRAME ──
-  // Chain stay: rear axle → BB
-  tube(0,0, CRANK_X,CRANK_Y, '#4a5568', 3);
-  // Seat tube: BB → seat top
-  tube(CRANK_X,CRANK_Y, WB*.32,SEAT_Y-12, '#4a5568', 3);
-  // Top tube: seat → head tube
-  tube(WB*.32,SEAT_Y-12, HB_X,HB_Y-8+BB, R, 3.5);
-  // Down tube: BB → head tube
-  tube(CRANK_X,CRANK_Y, HB_X,HB_Y-8+BB, R, 3.5);
-  // Front fork
-  tube(HB_X,HB_Y-8+BB, WB,fwy, '#718096', 2.5);
+  // Bicycle Frame (Sleek minimalist geometry)
+  tube(0,0, CRANK_X,CRANK_Y, '#64748b', 3.5); // Chain stay
+  tube(CRANK_X,CRANK_Y, WB*.32,SEAT_Y-12, '#64748b', 4); // Seat tube
+  tube(WB*.32,SEAT_Y-12, HB_X,HB_Y-8+BB, '#cbd5e1', 4.5); // Top tube
+  tube(CRANK_X,CRANK_Y, HB_X,HB_Y-8+BB, '#cbd5e1', 5); // Down tube
+  tube(HB_X,HB_Y-8+BB, WB,fwy, '#64748b', 3.5); // Front fork
+  
+  tube(WB*.32,SEAT_Y-12, SEAT_X,SEAT_Y, INK, 3); // Seat post
+  // Sleek Aerodynamic Saddle
+  cx.beginPath();cx.moveTo(SEAT_X-12,SEAT_Y+2);cx.quadraticCurveTo(SEAT_X,SEAT_Y-6,SEAT_X+12,SEAT_Y+1);
+  cx.strokeStyle=INK;cx.lineWidth=6.5;cx.stroke();
+  cx.strokeStyle='#334155';cx.lineWidth=4.5;cx.stroke();
 
-  // Seat post
-  tube(WB*.32,SEAT_Y-12, SEAT_X,SEAT_Y, '#4a5568', 2.5);
-  // Saddle
-  cx.beginPath();cx.moveTo(SEAT_X-10,SEAT_Y);cx.bezierCurveTo(SEAT_X-6,SEAT_Y-4,SEAT_X+8,SEAT_Y-4,SEAT_X+12,SEAT_Y);
-  cx.strokeStyle=INK;cx.lineWidth=5.5;cx.stroke();
-  cx.strokeStyle=YL;cx.lineWidth=4;cx.stroke();
+  // Stem & Handlebar
+  tube(HB_X,HB_Y-8+BB, HB_X+5,HB_Y-18+BB, INK, 3.5);
+  cx.beginPath();cx.moveTo(HB_X-5,HB_Y-18+BB);cx.lineTo(HB_X+9,HB_Y-18+BB);
+  cx.strokeStyle=INK;cx.lineWidth=5.5;cx.stroke();cx.strokeStyle='#334155';cx.lineWidth=3.5;cx.stroke();
+  // Premium Grips
+  cx.beginPath();cx.arc(HB_X-5,HB_Y-18+BB,4,0,Math.PI*2);cx.fillStyle='#0f172a';cx.fill();
+  cx.beginPath();cx.arc(HB_X+9,HB_Y-18+BB,4,0,Math.PI*2);cx.fill();
+  
+  // Crank Hub
+  cx.beginPath();cx.arc(CRANK_X,CRANK_Y,5,0,Math.PI*2);
+  cx.fillStyle='#475569';cx.strokeStyle=INK;cx.lineWidth=2;cx.fill();cx.stroke();
 
-  // Handlebar stem
-  tube(HB_X,HB_Y-8+BB, HB_X,HB_Y-18+BB, '#4a5568', 2.5);
-  // Handlebar bar (horizontal)
-  cx.beginPath();cx.moveTo(HB_X-8,HB_Y-18+BB);cx.lineTo(HB_X+8,HB_Y-18+BB);
-  cx.strokeStyle=INK;cx.lineWidth=5;cx.stroke();cx.strokeStyle='#2d3748';cx.lineWidth=3.5;cx.stroke();
-  // Grips
-  cx.beginPath();cx.arc(HB_X-8,HB_Y-18+BB,3,0,Math.PI*2);cx.fillStyle='#1a202c';cx.fill();
-  cx.beginPath();cx.arc(HB_X+8,HB_Y-18+BB,3,0,Math.PI*2);cx.fill();
+  // ── RIDER INVERSE KINEMATICS ──
+  var hipX = SEAT_X - 1, hipY = SEAT_Y - 4;
+  var thighLen = 17.5, shinLen = 17.5;
+  var crankL = 8.5;
+  var phase1 = t * 3.5, phase2 = phase1 + Math.PI;
 
-  // ── CRANK DOT (no moving pedals) ──
-  cx.beginPath();cx.arc(CRANK_X,CRANK_Y,3.5,0,Math.PI*2);
-  cx.fillStyle=YL;cx.strokeStyle=INK;cx.lineWidth=1.5;cx.fill();cx.stroke();
+  var foot1x = CRANK_X + Math.cos(phase1)*crankL;
+  var foot1y = CRANK_Y + Math.sin(phase1)*crankL;
+  var foot2x = CRANK_X + Math.cos(phase2)*crankL;
+  var foot2y = CRANK_Y + Math.sin(phase2)*crankL;
 
-  // ── RIDER ──
-  cx.save();
-  cx.translate(SEAT_X+2, SEAT_Y);
-  cx.rotate(bodyLean*Math.PI/180);
+  var upperArm = 18, lowerArm = 18;
+  var handX = HB_X + 2, handY = HB_Y - 18 + BB;
 
-  // ── LEGS — simple sine cycling, knee stays in natural range ──
-  // Leg 1: down-stroke phase
-  var phase1 = b.t * 3.5;
-  var hip1x = 2, hip1y = 0;
-  // knee swings forward/back naturally
-  var knee1x = hip1x + 10 + Math.cos(phase1)*8;
-  var knee1y = hip1y + 14 + Math.sin(phase1)*5;
-  // foot lands near crank area
-  var foot1x = CRANK_X - (SEAT_X+2) + Math.cos(phase1+.5)*10;
-  var foot1y = CRANK_Y - SEAT_Y + Math.sin(phase1+.5)*8 + 4;
+  var torsoLen = 25;
+  var torsoRot = bodyLean * Math.PI / 180;
+  var shoulderX = hipX + torsoLen * Math.sin(-torsoRot);
+  var shoulderY = hipY - torsoLen * Math.cos(torsoRot);
+  // Introduce a slight hunch curve to the spine
+  var midSpineX = hipX + (shoulderX - hipX)*0.5 - 4;
+  var midSpineY = hipY + (shoulderY - hipY)*0.5 - 2;
 
-  cx.beginPath();cx.moveTo(hip1x,hip1y);cx.lineTo(knee1x,knee1y);cx.lineTo(foot1x,foot1y);
-  cx.strokeStyle=INK;cx.lineWidth=7;cx.stroke();
-  cx.strokeStyle=RD;cx.lineWidth=5;cx.stroke();
+  // 1. Draw Back Leg
+  drawIKLimb(hipX, hipY, foot2x, foot2y, thighLen, shinLen, false, RD, 5.5, false, '');
 
-  // Leg 2: opposite phase
-  var phase2 = phase1 + Math.PI;
-  var hip2x = -2, hip2y = 0;
-  var knee2x = hip2x + 10 + Math.cos(phase2)*8;
-  var knee2y = hip2y + 14 + Math.sin(phase2)*5;
-  var foot2x = CRANK_X - (SEAT_X+2) + Math.cos(phase2+.5)*10;
-  var foot2y = CRANK_Y - SEAT_Y + Math.sin(phase2+.5)*8 + 4;
+  // 2. Draw Back Arm
+  drawIKLimb(shoulderX, shoulderY, handX+3, handY+1, upperArm, lowerArm, true, RD, 4.5, true, 'hold');
 
-  cx.beginPath();cx.moveTo(hip2x,hip2y);cx.lineTo(knee2x,knee2y);cx.lineTo(foot2x,foot2y);
-  cx.strokeStyle=INK;cx.lineWidth=7;cx.stroke();
-  cx.strokeStyle=R;cx.lineWidth=5;cx.stroke();
-
-  // ── TORSO ──
-  var torsoH=32;
+  // 3. Draw Beautiful Curved Torso
   cx.beginPath();
-  cx.moveTo(-9,-4);
-  cx.bezierCurveTo(-11,-14, -9,-28, -4,-torsoH);
-  cx.lineTo(6,-torsoH);
-  cx.bezierCurveTo(11,-28, 11,-14, 9,-4);
+  cx.moveTo(hipX-5, hipY);
+  cx.quadraticCurveTo(midSpineX-8, midSpineY, shoulderX-6, shoulderY+2);
+  cx.bezierCurveTo(shoulderX-1, shoulderY-6, shoulderX+5, shoulderY-2, shoulderX+6, shoulderY+4);
+  cx.quadraticCurveTo(midSpineX+5, midSpineY+2, hipX+6, hipY-1);
   cx.closePath();
-  cx.fillStyle=R;cx.strokeStyle=INK;cx.lineWidth=2;cx.fill();cx.stroke();
+  cx.fillStyle = R; cx.strokeStyle=INK; cx.lineWidth=2.5; cx.fill(); cx.stroke();
 
-  // Jersey stripes
-  cx.beginPath();cx.moveTo(-9,-16);cx.lineTo(9,-16);
-  cx.strokeStyle='rgba(255,255,255,.15)';cx.lineWidth=2;cx.stroke();
-  cx.beginPath();cx.moveTo(-8,-23);cx.lineTo(8,-23);cx.stroke();
+  // Waist details
+  cx.beginPath();cx.arc(hipX, hipY, 6.5, 0, Math.PI*2);
+  cx.fillStyle='#1e293b'; cx.strokeStyle=INK; cx.lineWidth=2; cx.fill(); cx.stroke();
+  
+  // Sleek Jersey Stripe
+  cx.beginPath(); cx.moveTo(hipX-5, hipY-8); cx.quadraticCurveTo(midSpineX, midSpineY+2, hipX+6, hipY-9);
+  cx.strokeStyle='rgba(255,255,255,0.2)'; cx.lineWidth=3; cx.stroke();
 
-  // Scarf/collar
-  cx.beginPath();
-  cx.moveTo(-9,-28);cx.lineTo(9,-28);cx.lineTo(6,-22);cx.lineTo(-6,-22);cx.closePath();
-  cx.fillStyle=YL;cx.strokeStyle=INK;cx.lineWidth=1.5;cx.fill();cx.stroke();
+  // 4. Draw Front Leg
+  drawIKLimb(hipX, hipY, foot1x, foot1y, thighLen, shinLen, false, R, 6, false, '');
 
-  // ── BACK ARM (to handlebar) ──
-  var hRelX = (HB_X-SEAT_X-2)*Math.cos(-bodyLean*Math.PI/180) - (HB_Y-18+BB-SEAT_Y)*Math.sin(-bodyLean*Math.PI/180);
-  var hRelY = (HB_X-SEAT_X-2)*Math.sin(-bodyLean*Math.PI/180) + (HB_Y-18+BB-SEAT_Y)*Math.cos(-bodyLean*Math.PI/180);
-  // Back arm goes to handlebar
-  cx.beginPath();cx.moveTo(-6,-28);cx.quadraticCurveTo(hRelX*.3+4,hRelY*.4,hRelX+6,hRelY-6);
-  cx.strokeStyle=INK;cx.lineWidth=7;cx.stroke();cx.strokeStyle=RD;cx.lineWidth=5;cx.stroke();
-
-  // ── FRONT ARM (wave or handlebar) ──
+  // 5. Draw Front Arm (Waving or Holding)
   if(action==='wave'){
-    var wv=Math.sin(b.t*6)*40;
-    cx.save();cx.translate(6,-28);cx.rotate((-95+wv)*Math.PI/180);
-    // Upper arm
-    cx.beginPath();cx.moveTo(0,0);cx.lineTo(0,16);
-    cx.strokeStyle=INK;cx.lineWidth=7;cx.stroke();cx.strokeStyle=R;cx.lineWidth=5;cx.stroke();
-    // Forearm + hand
-    cx.translate(0,16);cx.rotate(Math.sin(b.t*8)*20*Math.PI/180);
-    cx.beginPath();cx.moveTo(0,0);cx.lineTo(0,13);
-    cx.strokeStyle=INK;cx.lineWidth=6;cx.stroke();cx.strokeStyle=R;cx.lineWidth=4.5;cx.stroke();
-    // Hand
-    cx.beginPath();cx.arc(0,15,5,0,Math.PI*2);cx.fillStyle=SK;cx.strokeStyle=INK;cx.lineWidth=2;cx.fill();cx.stroke();
-    // Fingers wave
-    for(var f=0;f<4;f++){
-      var fwave=Math.sin(b.t*9+f*1.2)*6;
-      cx.beginPath();cx.moveTo(-4+f*2.5,13);cx.lineTo(-4+f*2.5+fwave,6);
-      cx.strokeStyle=SK;cx.lineWidth=2;cx.stroke();
-    }
-    cx.restore();
+    var waveTargetX = shoulderX + 9 + Math.cos(t*8)*7;
+    var waveTargetY = shoulderY - 20 + Math.sin(t*6)*7;
+    drawIKLimb(shoulderX, shoulderY, waveTargetX, waveTargetY, upperArm, lowerArm, true, R, 6, true, 'wave');
   } else {
-    cx.beginPath();cx.moveTo(6,-28);cx.quadraticCurveTo(hRelX*.35+2,hRelY*.45,hRelX+4,hRelY-6);
-    cx.strokeStyle=INK;cx.lineWidth=7;cx.stroke();cx.strokeStyle=R;cx.lineWidth=5;cx.stroke();
+    drawIKLimb(shoulderX, shoulderY, handX-4, handY-2, upperArm, lowerArm, true, R, 6, true, 'hold');
   }
 
-  // ── HEAD ──
-  cx.save();cx.translate(2,-torsoH-2);
-
-  // Small body bob head follows
-  var headBob=Math.sin(b.t*5.6)*.8;
-  cx.translate(0,headBob);
-
-  // Neck
-  cx.beginPath();cx.rect(-3.5,0,7,7);cx.fillStyle=SK;cx.strokeStyle=INK;cx.lineWidth=1.2;cx.fill();cx.stroke();
-
-  // Head circle
-  cx.beginPath();cx.ellipse(1,-11,13,12,0,0,Math.PI*2);
+  // 6. HEAD & HELMET
+  cx.save();
+  cx.translate(shoulderX + 3, shoulderY - 5);
+  cx.translate(0, Math.sin(t*5.6)*0.8); // Natural subtle head bob
+  
+  // Aerodynamic Neck
+  cx.beginPath();cx.rect(-3,-4,6,7);
   cx.fillStyle=SK;cx.strokeStyle=INK;cx.lineWidth=2;cx.fill();cx.stroke();
 
-  // HELMET
+  // Refined Face
+  cx.beginPath();cx.ellipse(2, -12, 11, 10.5, 0, 0, Math.PI*2);
+  cx.fillStyle=SK;cx.strokeStyle=INK;cx.lineWidth=2.5;cx.fill();cx.stroke();
+
+  // Premium Helmet geometry (Teardrop shape)
   cx.beginPath();
-  cx.moveTo(-13,-12);
-  cx.quadraticCurveTo(-15,-30, 0,-33);
-  cx.quadraticCurveTo(14,-33, 15,-22);
-  cx.quadraticCurveTo(16,-14, 13,-12);
-  cx.fillStyle=R;cx.strokeStyle=INK;cx.lineWidth=2;cx.fill();cx.stroke();
-  // Helmet vents
-  for(var v=0;v<3;v++){
-    cx.beginPath();cx.moveTo(-4+v*5,-30);cx.lineTo(-3+v*5,-23);
-    cx.strokeStyle='rgba(0,0,0,.2)';cx.lineWidth=2.5;cx.stroke();
-  }
-  // Helmet highlight
-  cx.beginPath();cx.moveTo(-9,-30);cx.quadraticCurveTo(2,-34,12,-26);
-  cx.strokeStyle='rgba(255,255,255,.3)';cx.lineWidth=2.5;cx.stroke();
-  // Visor
-  cx.beginPath();cx.moveTo(-13,-12);cx.quadraticCurveTo(0,-16,13,-12);
-  cx.strokeStyle=RD;cx.lineWidth=3;cx.stroke();
+  cx.moveTo(-11, -12);
+  cx.bezierCurveTo(-11, -28, 2, -31, 12, -22); 
+  cx.lineTo(16, -17);
+  cx.quadraticCurveTo(11, -11, -11, -12);
+  cx.fillStyle='#1e293b'; cx.strokeStyle=INK; cx.lineWidth=2.5; cx.fill(); cx.stroke();
+  
+  // Helmet aggressive racing stripes
+  cx.beginPath();cx.moveTo(3,-29);cx.lineTo(15,-19);
+  cx.strokeStyle=R; cx.lineWidth=3.5; cx.stroke(); 
+  cx.beginPath();cx.moveTo(-4,-28);cx.lineTo(0,-22);
+  cx.strokeStyle='rgba(255,255,255,0.25)'; cx.lineWidth=2.5; cx.stroke(); // highlight
 
-  // Eyes — blink naturally
-  var now=Date.now();
-  var blinkH = (action==='idle'&&Math.sin(now*.003)<-.93) ? .08 : 1;
-  cx.beginPath();cx.ellipse(-4,-10,3.5,3.5*blinkH,0,0,Math.PI*2);
-  cx.fillStyle='#fff';cx.strokeStyle=INK;cx.lineWidth=1.2;cx.fill();cx.stroke();
-  cx.beginPath();cx.ellipse(5,-10,3.5,3.5*blinkH,0,0,Math.PI*2);
+  // Futuristic Visor (Glassmorphism look)
+  cx.beginPath();cx.moveTo(5,-18);cx.quadraticCurveTo(12,-20, 16,-17);
+  cx.quadraticCurveTo(13, -12, 7, -15);
+  cx.fillStyle='#38bdf8'; cx.strokeStyle=INK; cx.lineWidth=1; cx.fill(); cx.stroke();
+  cx.beginPath();cx.moveTo(8,-17.5);cx.lineTo(13,-15.5);
+  cx.strokeStyle='rgba(255,255,255,0.7)'; cx.lineWidth=1.5; cx.stroke(); // Visor shine
+  
+  // Expressive Eyes
+  var now = Date.now();
+  var blinkH = (action==='idle' && Math.sin(now*0.003) < -0.93) ? 0.15 : (action==='angry' ? 0.6 : 1);
+  cx.beginPath();cx.ellipse(2,-11, 2.5, 3.2*blinkH, 0, 0, Math.PI*2);
+  cx.fillStyle='#fff';cx.strokeStyle=INK;cx.lineWidth=1.5;cx.fill();cx.stroke();
+  cx.beginPath();cx.ellipse(9,-11, 2.5, 3.2*blinkH, 0, 0, Math.PI*2);
   cx.fill();cx.stroke();
-  // Pupils look in travel direction
-  cx.beginPath();cx.arc(-4+1.5,-10,2,0,Math.PI*2);cx.fillStyle='#1a1a2e';cx.fill();
-  cx.beginPath();cx.arc(5+1.5,-10,2,0,Math.PI*2);cx.fill();
-  // Eye shine
-  cx.beginPath();cx.arc(-2.5,-11.2,.9,0,Math.PI*2);cx.fillStyle='rgba(255,255,255,.85)';cx.fill();
-  cx.beginPath();cx.arc(6.5,-11.2,.9,0,Math.PI*2);cx.fill();
-  // Eyebrows — expressive
-  cx.beginPath();cx.moveTo(-8,-15);cx.quadraticCurveTo(-4,-17,0,-15);
-  cx.strokeStyle=RD;cx.lineWidth=2.2;cx.stroke();
-  cx.beginPath();cx.moveTo(2,-15);cx.quadraticCurveTo(6,-17,10,-15);cx.stroke();
+  
+  // Focused Pupils tracking movement direction
+  var pupilOff = (action==='wheelie') ? 1 : (action==='angry' ? 1.5 : 0);
+  cx.beginPath();cx.arc(2+pupilOff,-11, 1.2, 0, Math.PI*2);cx.fillStyle=INK;cx.fill();
+  cx.beginPath();cx.arc(9+pupilOff,-11, 1.2, 0, Math.PI*2);cx.fill();
 
-  // Mouth
+  if (action === 'angry') {
+    // Angry eyebrows \ /
+    cx.beginPath();cx.moveTo(0,-15.5);cx.lineTo(3.5,-13);
+    cx.strokeStyle=INK;cx.lineWidth=1.5;cx.stroke();
+    cx.beginPath();cx.moveTo(11,-15.5);cx.lineTo(7.5,-13);cx.stroke();
+  }
+  
+  // Assertive Mouth
   cx.beginPath();
   if(action==='wave'||action==='wheelie'){
-    // Big open smile
-    cx.arc(1,-5,4,.15,Math.PI-.15);
-    cx.strokeStyle=INK;cx.lineWidth=2.2;cx.stroke();
-    // Teeth hint
-    cx.beginPath();cx.arc(1,-5,2.5,.2,Math.PI-.2);
-    cx.strokeStyle='rgba(255,255,255,.5)';cx.lineWidth=1.5;cx.stroke();
+    cx.arc(5.5,-4.5, 4, 0.1, Math.PI-0.1);
+    cx.strokeStyle=INK;cx.lineWidth=2.5;cx.stroke();
+    // Inner mouth shade
+    cx.beginPath();cx.arc(5.5,-4.5, 3, 0.2, Math.PI-0.2);
+    cx.strokeStyle='#ef4444';cx.lineWidth=1.5;cx.stroke();
+  } else if (action === 'angry') {
+    // Bared teeth
+    cx.rect(3, -5.5, 5, 2.5);
+    cx.fillStyle='#fff';cx.strokeStyle=INK;cx.lineWidth=1.5;cx.fill();cx.stroke();
+    cx.beginPath();cx.moveTo(3,-4.25);cx.lineTo(8,-4.25);cx.stroke();
   } else {
-    cx.moveTo(-3,-4);cx.quadraticCurveTo(1,-1.5,4,-4);
-    cx.strokeStyle=INK;cx.lineWidth=1.8;cx.stroke();
+    // Confident smirk
+    cx.moveTo(3,-4);cx.quadraticCurveTo(6,-2, 8,-5);
+    cx.strokeStyle=INK;cx.lineWidth=2;cx.stroke();
   }
-  // Cheek blush
-  cx.beginPath();cx.ellipse(-9,-7,4,2.5,-.2,0,Math.PI*2);cx.fillStyle='rgba(255,120,120,.18)';cx.fill();
-  cx.beginPath();cx.ellipse(11,-7,4,2.5,.2,0,Math.PI*2);cx.fill();
 
-  cx.restore(); // head
-  cx.restore(); // rider body
-  cx.restore(); // whole character
+  cx.restore(); // Head
+  cx.restore(); // Whole character
 }
 
 // Bubble
@@ -593,14 +576,35 @@ function speedLines(bx,by,dir){
 // Update
 function updateBike(){
   b.aTick++;
-  if(b.aTick>=ACTS[b.aIdx].d) nextAct();
+  if(b.action !== 'angry' && b.aTick>=ACTS[b.aIdx].d) nextAct();
 
-  if(b.action!=='idle'){
-    b.x += b.speed*b.dir;
-    b.t  += 0.06; // smooth time increment
-    // Natural body bob — sinusoidal, tied to pedal rhythm
-    b.bodyBob = Math.sin(b.t*2.8)*2.2;
-    if(b.tick%8===0) puff(b.x-b.dir*24, b.baseY+2);
+  // Mouse curiosity — check if close to mouse
+  var dist = Math.abs(mouse.x - b.x);
+  var curiosity = (dist < 280 && mouse.y < DH);
+
+  if (b.action === 'angry') {
+    b.x += b.speed * b.dir;
+    b.t += 0.12; 
+    b.bodyBob = Math.sin(b.t*4.0)*2.5;
+    if(b.tick%4===0) puff(b.x-b.dir*24, b.baseY+2);
+    if(b.aTick > 150) {
+      b.action = 'ride';
+      b.speed = 2.4;
+      b.clicks = 0;
+      b.aTick = 0;
+    }
+  } else if(b.action!=='idle'){
+    if (curiosity && dist <= b.speed) {
+      b.x = mouse.x;
+      b.t += 0.02;
+      b.bodyBob = Math.sin(b.t*1.5)*1.5;
+    } else {
+      b.x += b.speed*b.dir;
+      b.t  += 0.06; // smooth time increment
+      // Natural body bob — sinusoidal, tied to pedal rhythm
+      b.bodyBob = Math.sin(b.t*2.8)*2.2;
+      if(b.tick%8===0) puff(b.x-b.dir*24, b.baseY+2);
+    }
   } else {
     b.t += 0.02;
     b.bodyBob = Math.sin(b.t*1.5)*1.5; // gentle idle sway
@@ -622,7 +626,7 @@ function updateBike(){
   if(b.x < -150){b.x=-150; b.dir=1;}
 
   // Mouse curiosity — look toward mouse
-  if(Math.abs(mouse.x-b.x)<280 && mouse.y < DH)
+  if(b.action !== 'angry' && curiosity && dist > 0)
     b.dir = mouse.x > b.x ? 1 : -1;
 
   // Dust physics
@@ -689,6 +693,31 @@ setInterval(function(){
 // SCROLL REVEAL
 var obs=new IntersectionObserver(function(entries){entries.forEach(function(e){if(e.isIntersecting){var d=parseFloat(e.target.style.transitionDelay||'0')*1000;setTimeout(function(){e.target.classList.add('in')},d)}})},{threshold:.12});
 document.querySelectorAll('.reveal,.reveal-l').forEach(function(el){obs.observe(el)});
+
+// CYCLIST CLICK BOOST
+document.addEventListener('mousedown', function(e) {
+  var cy = b.jumping ? b.y : b.baseY;
+  // Box around cyclist
+  if (Math.abs(e.clientX - b.x) < 70 && Math.abs(e.clientY - cy + 40) < 90) {
+    var now = Date.now();
+    if (!b.lastClickT || now - b.lastClickT > 3000) b.clicks = 0; // reset if too slow
+    b.clicks = (b.clicks || 0) + 1;
+    b.lastClickT = now;
+    
+    if (b.clicks >= 3 && b.action !== 'angry') {
+      b.action = 'angry';
+      b.speed = 14; // super fast boost
+      b.bubble.txt = 'LEAVE ME ALONE! 🤬';
+      b.bubble.timer = 150;
+      b.aTick = 0; 
+      // wheelie pop to start the boost
+      if(!b.jumping) { b.jumping=true; b.jumpVY=-7; }
+    } else if (b.action !== 'angry') {
+      b.bubble.txt = b.clicks === 1 ? 'Hey?' : 'Stop poking me!';
+      b.bubble.timer = 60;
+    }
+  }
+});
 </script>
 </body>
 </html>
